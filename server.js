@@ -13,8 +13,8 @@ var mysql = require('mysql')
 var app = express()
 var db = mysql.createConnection({
     host: 'localhost',
-    user: 'viral',
-    password: 'viral',
+    user: 'socialposter',
+    password: 'socialposter123!',
     database: 'socialposter'
 });
 
@@ -25,11 +25,13 @@ var jsonParser = bodyParser.json()
 app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
     if (!req.body) return res.sendStatus(400)
     // create user in req.body
-    
-    
+
 	console.log('request params: ', req.params);
 	console.log('request body: ', req.body);
-     res.json({result:true});
+
+    register(req.params.rfid, req.body);
+
+    res.json({result:true});
 
 })
 
@@ -147,6 +149,21 @@ function getQuote(mac, res) {
     });
 }
 
-function register(rfid, type, token){
-    var sql = "INSERT"
+function register(rfid, p){
+    var sql = "INSERT INTO users SET ?";
+
+    var data = {
+                rfid:rfid,
+                twitter_accessToken: p.tat,
+                twitter_accessTokenSecret: p.tats,
+                twitter_profile: p.tp,
+                facebook_accessToken: p.fat,
+                facebook_accessTokenSecret: p.fats,
+                facebook_profile: p.fp
+                };
+    var query = db.query(sql,data,function(err,result){
+       console.log('err',err,'result',result)
+    });
+    console.log('query.sql',query.sql);
+
 }
