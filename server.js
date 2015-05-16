@@ -24,22 +24,17 @@ var jsonParser = bodyParser.json()
 
 app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
     if (!req.body) return res.sendStatus(400)
-    // create user in req.body
 
-	console.log('request params: ', req.params);
-	console.log('request body: ', req.body);
+    register(req.params.rfid, req.body, res);
 
-    register(req.params.rfid, req.body);
-
-    res.json({result:true});
 
 })
 
 
-app.get('/getquote/:mac', function(req, res) {
+app.get('/getquote/:mac/:time/:signature', function(req, res) {
     console.log('in getquote');
     if( req.params.mac ==  '') {
-        res.statusCode = 404;
+        res.statusCode = 403;
         return res.send('Error 404: No quote found');
     }
     getQuote(req.params.mac, res);
@@ -53,10 +48,10 @@ app.get('/getquote/:mac', function(req, res) {
 //
 //})
 
-app.post('/post', jsonParser, function (req, res) {
+app.post('/post/:rfid/:quote_id/:time/:signature', jsonParser,function (req, res) {
     if (!req.body) return res.sendStatus(400)
     // create user in req.body
-    res.json(quotes);
+    res.json({result:'success'});
 
 })
 
@@ -143,13 +138,14 @@ function getQuote(mac, res) {
          res.send(rows[0]);
         } else {
             res.statusCode = 404;
-            res.json({'error':'no quote'})
+            res.json({result:'fail',
+                      error:'unregistered mac'})
             //res.send('Error 404: No quote found');
         }
     });
 }
 
-function register(rfid, p){
+function register(rfid, p, res){
     var sql = "INSERT INTO users SET ?";
 
     var data = {
@@ -162,8 +158,15 @@ function register(rfid, p){
                 facebook_profile: p.fp
                 };
     var query = db.query(sql,data,function(err,result){
-       console.log('err',err,'result',result)
+        var output;
+        if(err != null){
+            console.log('err',err,'result',result);
+            output = {result:'fail'};
+        }else{
+            output = {result:'success',user_id:result.insertId};
+        }
+        res.json(output);
     });
-    console.log('query.sql',query.sql);
+    //console.log('query.sql',query.sql);
 
 }
