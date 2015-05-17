@@ -1,13 +1,3 @@
-var quotes = [
-    {author: 'Audrey Hepburn', text: "Nothing is impossible, the word itself says 'I'm possible'!"},
-    {
-        author: 'Walt Disney',
-        text: "You may not realize it when it happens, but a kick in the teeth may be the best thing in the world for you"
-    },
-    {author: 'Unknown', text: "Even the greatest was once a beginner. Don’t be afraid to take that first step."},
-    {author: 'Neale Donald Walsch', text: "You are afraid to die, and you’re afraid to live. What a way to exist."}
-];
-
 var express = require('express')
 var bodyParser = require('body-parser')
 var mysql = require('mysql')
@@ -35,7 +25,6 @@ app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
     if (!req.body) return res.sendStatus(400)
 
     register(req.params.rfid, req.body, res);
-
 
 })
 
@@ -86,53 +75,6 @@ app.listen(process.env.PORT || 22605)
 
 
 //app.use(bodyParser());
-//
-//app.get('/', function(req, res) {
-//    res.json(quotes);
-//});
-//
-//app.get('/quote/random', function(req, res) {
-//    var id = Math.floor(Math.random() * quotes.length);
-//    var q = quotes[id];
-//    res.json(q);
-//});
-//
-//app.get('/quote/:id', function(req, res) {
-//    if(quotes.length <= req.params.id || req.params.id < 0) {
-//        res.statusCode = 404;
-//        return res.send('Error 404: No quote found');
-//    }
-//
-//    var q = quotes[req.params.id];
-//    res.json(q);
-//});
-//
-//app.post('/quote', function(req, res) {
-//    if(!req.body.hasOwnProperty('author') || !req.body.hasOwnProperty('text')) {
-//        res.statusCode = 400;
-//        return res.send('Error 400: Post syntax incorrect.');
-//    }
-//
-//    var newQuote = {
-//        author : req.body.author,
-//        text : req.body.text
-//    };
-//
-//    quotes.push(newQuote);
-//    res.json(true);
-//});
-//
-//app.delete('/quote/:id', function(req, res) {
-//    if(quotes.length <= req.params.id) {
-//        res.statusCode = 404;
-//        return res.send('Error 404: No quote found');
-//    }
-//
-//    quotes.splice(req.params.id, 1);
-//    res.json(true);
-//});
-//
-//app.listen(process.env.PORT || 3412);
 
 
 function postSocial(rfid, quote_id, res) {
@@ -192,7 +134,7 @@ function _postSocial(userData, quoteData, res){
 }
 
 function _getSocialInfo(id, cb) {
-    var sql = "SELECT * FROM users WHERE ?";
+    var sql = "SELECT * FROM users WHERE ? ORDER BY `user_id` DESC";
     db.query(sql, {rfid: id}, function (err, rows) {
         cb(err, rows);
     });
@@ -231,10 +173,10 @@ function register(rfid, p, res) {
         rfid: rfid,
         twitter_accessToken: p.tat,
         twitter_accessTokenSecret: p.tats,
-        twitter_profile: p.tp,
+        twitter_profile: (p.tp != null)?JSON.stringify(p.tp):null,
         facebook_accessToken: p.fat,
         facebook_accessTokenSecret: p.fats,
-        facebook_profile: p.fp
+        facebook_profile: (p.fp != null)?JSON.stringify(p.fp):null
     };
     var query = db.query(sql, data, function (err, result) {
         var output;
@@ -246,7 +188,7 @@ function register(rfid, p, res) {
         }
         res.json(output);
     });
-    //console.log('query.sql',query.sql);
+    console.log('query.sql',query.sql);
 
 }
 
