@@ -4,18 +4,20 @@ var mysql = require('mysql')
 var fs = require('fs');
 var OAuth = require('oauth').OAuth;
 var util = require('util');
-var config = require('./oauth.js');
-
 var https = require('https');
 var http = require('http');
 
+var config;
+if(fs.existsSync('/home/piptastic/var/secure/twitterwall/config.js')){
+    console.log('found config file in /var/secure');
+    config = require('/home/piptastic/var/secure/twitterwall/config.js');
+}
+else{
+    config = require('./config.js')
+}
+
 var app = express()
-var db = mysql.createConnection({
-    host: 'localhost',
-    user: 'socialposter',
-    password: 'socialposter123!',
-    database: 'socialposter'
-});
+var db = mysql.createConnection(config.app.db);
 
 
 // create application/json parser
@@ -265,4 +267,72 @@ function postToTwitter(twitter_access_token,twitter_authtoken_secret, msg, fileL
 
 function twitterLoadComplete(){
     console.log('completed tweeting');
+}
+
+function postToFB(rfidin, msg, fileLocation) {
+    console.log('gonna post to fb', msg, fileLocation);
+//    setTimeout(function(){
+//         facebookLoadComplete();
+//    },2000);
+//    return false;
+
+
+    addOverlay(fileLocation, function(loc) {
+        console.log('########@@@@@@@@@ filelocation', loc);
+        fileLocation = loc;
+        var thelink = '';
+        var theimage = '';
+        var ACCESS_TOKEN = '';
+        connection.query('SELECT * from picture_taker.users WHERE ? LIMIT 1', {rfid: rfidin}, function(err, rows) {
+            if (rows.length > 0 && rows[0].facebook_data != null) {
+                var mydata = JSON.parse(rows[0].facebook_data);
+                ACCESS_TOKEN = mydata.accessToken;
+                var user_id = rows[0].user_id;
+//                 thelink = 'http://hadleymedia.com/?campain=takeapic&user='+user_id;
+//                 theimage = 'http://hadleymedia.com/wp-content/uploads/2013/02/hadley1.png';
+
+
+            } else {
+                console.log('could not locate auth token');
+                return false;
+            }
+
+            console.log('using the followibg token: ', ACCESS_TOKEN);
+            var https = require('https'); //Https module of Node.js
+
+            var FormData = require('form-data'); //Pretty multipart form maker.
+
+            var form = new FormData(); //Create multipart form
+            form.append('file', fs.createReadStream(fileLocation)); //Put file
+            form.append('message', msg); //Put message
+//            form.append('link', thelink);
+//            form.append('picture',theimage);
+//            form.append('type', 'link')
+//            form.append('name','hadley media event');
+//POST request options, notice 'path' has access_token parameter
+            var options = {
+                method: 'post',
+                host: 'graph.facebook.com',
+                path: '/me/photos?access_token=' + ACCESS_TOKEN,
+                headers: form.getHeaders(),
+            }
+
+            console.log('starting POST request to facebook');
+//Do POST request, callback for response
+            var request = https.request(options, function(res) {
+                console.log(res);
+                facebookLoadComplete();
+            });
+//Binds form to request
+            form.pipe(request);
+//If anything goes wrong (request-wise not FB)
+            request.on('error', function(error) {
+                console.log(error);
+            });
+        });
+    });
+}
+
+function  facebookLoadComplete(){
+    console.log('facebook upload complete');
 }
