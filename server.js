@@ -196,7 +196,7 @@ function register(rfid, p, res) {
 
 
 function postToTwitter(twitter_access_token,twitter_authtoken_secret, msg, fileLocation) {
-    console.log('gonna post to fb', msg, fileLocation);
+    console.log('gonna post to twitter', msg, fileLocation);
 
 
         var fileName = fileLocation;
@@ -256,11 +256,12 @@ function postToTwitter(twitter_access_token,twitter_authtoken_secret, msg, fileL
         request.on('response', function (response) {
             response.setEncoding('utf8');
             response.on('data', function (chunk) {
-                console.log(chunk.toString());
+                //console.log(chunk.toString());
             });
             response.on('end', function () {
+                console.log('http code: '+ response.statusCode + '\n');
                 twitterLoadComplete();
-                console.log(response.statusCode + '\n');
+
             });
         });
 }
