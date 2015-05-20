@@ -6,6 +6,8 @@ var OAuth = require('oauth').OAuth;
 var util = require('util');
 var https = require('https');
 var http = require('http');
+var md5 = require('MD5');
+
 
 var config;
 if(fs.existsSync('/home/piptastic/var/secure/twitterwall/config.js')){
@@ -17,13 +19,20 @@ else{
 }
 
 var app = express()
-var db = mysql.createConnection(config.app.db);
+//var db = mysql.createConnection(config.app.db);
+
+//handleDisconnect also connects and handles connection errors
+var db;
+handleDisconnect();
 
 
 // create application/json parser
 var jsonParser = bodyParser.json()
 
+
 app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
+    checkSignature(req, res);
+
     if (!req.body) return res.sendStatus(400)
 
     register(req.params.rfid, req.body, res);
@@ -32,6 +41,7 @@ app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
 
 
 app.get('/getquote/:mac/:time/:signature', function (req, res) {
+    checkSignature(req, res);
     console.log('in getquote');
     if (req.params.mac == '') {
         res.statusCode = 403;
@@ -39,6 +49,7 @@ app.get('/getquote/:mac/:time/:signature', function (req, res) {
     }
     getQuote(req.params.mac, res);
 });
+
 
 //app.get('/getquote', jsonParser, function (req, res) {
 //    if (!req.body) return res.sendStatus(400)
@@ -49,8 +60,8 @@ app.get('/getquote/:mac/:time/:signature', function (req, res) {
 //})
 
 app.post('/post/:rfid/:quote_id/:time/:signature', jsonParser, function (req, res) {
+    checkSignature(req, res);
     if (req.params.rfid == '' ||req.params.quote_id == '') return res.sendStatus(400)
-
     postSocial(req.params.rfid, req.params.quote_id, res);
 })
 
@@ -77,6 +88,30 @@ app.listen(process.env.PORT || 22605)
 
 
 //app.use(bodyParser());
+
+function checkSignature(req,res){
+    var url = req.url;
+
+    var urlParts = url.split('/');
+    var sig = req.params.signature;
+
+    console.log(req,res);
+    var baseUri = '';
+    for(var i=0; i < urlParts.length-1; i++){
+        baseUri += urlParts[i] + '/';
+    }
+    if(md5(baseUri+config.app.apikey) != sig){
+        res.statusCode = 403;
+        return res.send('Error 403: Invalid signature');
+    }
+
+    if(Math.abs(req.params.time - Date.now()) > 120000){
+        res.statusCode = 403;
+        return res.send('Error 403: Invalid timestamp');
+    }
+
+
+}
 
 
 function postSocial(rfid, quote_id, res) {
@@ -337,3 +372,27 @@ function postToFB(rfidin, msg, fileLocation) {
 function  facebookLoadComplete(){
     console.log('facebook upload complete');
 }
+
+
+
+function handleDisconnect() {
+    db = mysql.createConnection(config.app.db); // Recreate the connection, since
+                                                    // the old one cannot be reused.
+
+    db.connect(function(err) {              // The server is either down
+        if(err) {                                     // or restarting (takes a while sometimes).
+            console.log('error when connecting to db:', err);
+            setTimeout(handleDisconnect, 2000); // We introduce a delay before attempting to reconnect,
+        }                                     // to avoid a hot loop, and to allow our node script to
+    });                                     // process asynchronous requests in the meantime.
+                                            // If you're also serving http, display a 503 error.
+    db.on('error', function(err) {
+        console.log('db error', err);
+        if(err.code === 'PROTOCOL_CONNECTION_LOST') { // Connection to the MySQL server is usually
+            handleDisconnect();                         // lost due to either server restart, or a
+        } else {                                      // connnection idle timeout (the wait_timeout
+            throw err;                                  // server variable configures this)
+        }
+    });
+}
+
