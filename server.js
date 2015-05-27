@@ -311,7 +311,7 @@ function postToFB(accessToken, msg, fileLocation) {
 
     var form = new FormData(); //Create multipart form
     form.append('file', fs.createReadStream(fileLocation)); //Put file
-    form.append('message', msg); //Put message
+   // form.append('message', msg); //Put message
 //            form.append('link', thelink);
 //            form.append('picture',theimage);
 //            form.append('type', 'link')
