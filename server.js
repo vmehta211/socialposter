@@ -6,6 +6,10 @@ var OAuth = require('oauth').OAuth;
 var util = require('util');
 var https = require('https');
 var http = require('http');
+var md5 = require('MD5');
+var utf8 = require('utf8');
+var Twitter = require('node-twitter');
+
 
 var config;
 if(fs.existsSync('/home/piptastic/var/secure/twitterwall/config.js')){
@@ -17,13 +21,20 @@ else{
 }
 
 var app = express()
-var db = mysql.createConnection(config.app.db);
+//var db = mysql.createConnection(config.app.db);
+
+//handleDisconnect also connects and handles connection errors
+var db;
+handleDisconnect();
 
 
 // create application/json parser
 var jsonParser = bodyParser.json()
 
+
 app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
+    checkSignature(req, res);
+
     if (!req.body) return res.sendStatus(400)
 
     register(req.params.rfid, req.body, res);
@@ -32,6 +43,7 @@ app.post('/register/:rfid/:time/:signature', jsonParser, function (req, res) {
 
 
 app.get('/getquote/:mac/:time/:signature', function (req, res) {
+    checkSignature(req, res);
     console.log('in getquote');
     if (req.params.mac == '') {
         res.statusCode = 403;
@@ -39,6 +51,7 @@ app.get('/getquote/:mac/:time/:signature', function (req, res) {
     }
     getQuote(req.params.mac, res);
 });
+
 
 //app.get('/getquote', jsonParser, function (req, res) {
 //    if (!req.body) return res.sendStatus(400)
@@ -49,8 +62,8 @@ app.get('/getquote/:mac/:time/:signature', function (req, res) {
 //})
 
 app.post('/post/:rfid/:quote_id/:time/:signature', jsonParser, function (req, res) {
+    checkSignature(req, res);
     if (req.params.rfid == '' ||req.params.quote_id == '') return res.sendStatus(400)
-
     postSocial(req.params.rfid, req.params.quote_id, res);
 })
 
@@ -77,6 +90,32 @@ app.listen(process.env.PORT || 22605)
 
 
 //app.use(bodyParser());
+
+function checkSignature(req,res){
+    var url = req.url;
+
+    var urlParts = url.split('/');
+    var sig = req.params.signature;
+
+    //  console.log(req,res);
+    var baseUri = '';
+    for(var i=0; i < urlParts.length-1; i++){
+        baseUri += urlParts[i] + '/';
+    }
+
+    /*
+     if(md5(baseUri+config.app.apikey) != sig){
+     res.statusCode = 403;
+     return res.send('Error 403: Invalid signature');
+     }
+
+     if(Math.abs(req.params.time - Date.now()) > 120000){
+     res.statusCode = 403;
+     return res.send('Error 403: Invalid timestamp');
+     }
+     */
+
+}
 
 
 function postSocial(rfid, quote_id, res) {
@@ -115,7 +154,13 @@ function postSocial(rfid, quote_id, res) {
 function _postSocial(userData, quoteData, res){
 
     if(userData != null && quoteData != null){
-        postToTwitter(userData.twitter_accessToken, userData.twitter_accessTokenSecret, quoteData.quote_text, quoteData.quote_filepath);
+        if (userData.twitter_accessToken != null) {
+            postToTwitter(userData.twitter_accessToken, userData.twitter_accessTokenSecret, quoteData.quote_text, quoteData.quote_filepath);
+        }
+
+        if (userData.facebook_accessToken != null) {
+            postToFB(userData.facebook_accessToken, quoteData.quote_text, quoteData.quote_filepath);
+        }
 
         var output = {result: 'success'};
         res.json(output);
@@ -195,82 +240,49 @@ function register(rfid, p, res) {
 }
 
 
-function postToTwitter(twitter_access_token,twitter_authtoken_secret, msg, fileLocation) {
+function postToTwitter(twitter_access_token,twitter_authtoken_secret, msg, fileLocation)
+{
     console.log('gonna post to twitter', msg, fileLocation);
+    console.log('using credentials: access_token:',twitter_access_token, ' auth token secret',twitter_authtoken_secret);
+    // Encode in UTF-8
+    msg = utf8.encode(msg);
 
 
-        var fileName = fileLocation;
-        var tweet = msg;
-        var photoName = fileName.split('/');
-        photoName = photoName[photoName.length - 1];
-        var data = fs.readFileSync(fileName);
-        var oauth = new OAuth(
-            'https://api.twitter.com/oauth/request_token',
-            'https://api.twitter.com/oauth/access_token',
-            config.twitter.consumerKey, config.twitter.consumerSecret,
-            '1.0', null, 'HMAC-SHA1');
-        var crlf = "\r\n";
-        var boundary = '---------------------------10102754414578508781458777923';
-        var separator = '--' + boundary;
-        var footer = crlf + separator + '--' + crlf;
-        var fileHeader = 'Content-Disposition: file; name="media[]"; filename="' + photoName + '"';
-        var contents = separator + crlf
-            + 'Content-Disposition: form-data; name="status"' + crlf
-            + crlf
-            + tweet + crlf
-            + separator + crlf
-            + fileHeader + crlf
-            + 'Content-Type: image/jpeg' + crlf
-            + crlf;
-        var multipartBody = Buffer.concat([
-            new Buffer(contents),
-            data,
-            new Buffer(footer)]);
-        var hostname = 'api.twitter.com';
-        var authorization = oauth.authHeader(
-            'https://api.twitter.com/1.1/statuses/update_with_media.json',
-            config.twitter.accessToken, config.twitter.accessTokenSecret, 'POST');
-        var authorization = oauth.authHeader(
-            'https://api.twitter.com/1.1/statuses/update_with_media.json',
-            twitter_access_token, twitter_authtoken_secret, 'POST');
-        var headers = {
-            'Authorization': authorization,
-            'Content-Type': 'multipart/form-data; boundary=' + boundary,
-            'Host': hostname,
-            'Content-Length': multipartBody.length,
-            'Connection': 'Keep-Alive'
-        };
-        var options = {
-            host: hostname,
-            port: 443,
-            path: '/1.1/statuses/update_with_media.json',
-            method: 'POST',
-            headers: headers
-        };
-        var request = https.request(options);
-        request.write(multipartBody);
-        request.end();
-        request.on('error', function (err) {
-            console.log('Error: Something is wrong.\n' + JSON.stringify(err) + '\n');
-        });
-        request.on('response', function (response) {
-            response.setEncoding('utf8');
-            response.on('data', function (chunk) {
-                //console.log(chunk.toString());
-            });
-            response.on('end', function () {
-                console.log('http code: '+ response.statusCode + '\n');
+    var twitterRest = new Twitter.RestClient(
+        config.twitter.consumerKey,
+        config.twitter.consumerSecret,
+        twitter_access_token,
+        twitter_authtoken_secret
+    );
+
+
+    twitterRest.statusesUpdateWithMedia(
+        {
+            'status': msg,
+            'media[]': fileLocation
+        },
+        function(error, result) {
+            if (error)
+            {
+                console.log('Error: ' + (error.code ? error.code + ' ' + error.message : error.message));
+            }
+
+            if (result)
+            {
                 twitterLoadComplete();
+            }
+        }
+    );
 
-            });
-        });
+
 }
+
 
 function twitterLoadComplete(){
     console.log('completed tweeting');
 }
 
-function postToFB(rfidin, msg, fileLocation) {
+function postToFB(accessToken, msg, fileLocation) {
     console.log('gonna post to fb', msg, fileLocation);
 //    setTimeout(function(){
 //         facebookLoadComplete();
@@ -278,62 +290,79 @@ function postToFB(rfidin, msg, fileLocation) {
 //    return false;
 
 
-    addOverlay(fileLocation, function(loc) {
-        console.log('########@@@@@@@@@ filelocation', loc);
-        fileLocation = loc;
-        var thelink = '';
-        var theimage = '';
-        var ACCESS_TOKEN = '';
-        connection.query('SELECT * from picture_taker.users WHERE ? LIMIT 1', {rfid: rfidin}, function(err, rows) {
-            if (rows.length > 0 && rows[0].facebook_data != null) {
-                var mydata = JSON.parse(rows[0].facebook_data);
-                ACCESS_TOKEN = mydata.accessToken;
-                var user_id = rows[0].user_id;
-//                 thelink = 'http://hadleymedia.com/?campain=takeapic&user='+user_id;
-//                 theimage = 'http://hadleymedia.com/wp-content/uploads/2013/02/hadley1.png';
+    //addOverlay(fileLocation, function(loc) {
+    var thelink = '';
+    var theimage = '';
+    var ACCESS_TOKEN = accessToken;
 
 
-            } else {
-                console.log('could not locate auth token');
-                return false;
-            }
+    var https = require('https'); //Https module of Node.js
 
-            console.log('using the followibg token: ', ACCESS_TOKEN);
-            var https = require('https'); //Https module of Node.js
+    var FormData = require('form-data'); //Pretty multipart form maker.
 
-            var FormData = require('form-data'); //Pretty multipart form maker.
+    var form = new FormData(); //Create multipart form
+    form.append('file', fs.createReadStream(fileLocation)); //Put file
+    //form.append('message', msg); //Put message
+// facebook doesn't allow us to put a message right now.
 
-            var form = new FormData(); //Create multipart form
-            form.append('file', fs.createReadStream(fileLocation)); //Put file
-            form.append('message', msg); //Put message
+    var https = require('https'); //Https module of Node.js
+
+    var FormData = require('form-data'); //Pretty multipart form maker.
+
+    var form = new FormData(); //Create multipart form
+    form.append('file', fs.createReadStream(fileLocation)); //Put file
+    form.append('message', msg); //Put message
 //            form.append('link', thelink);
 //            form.append('picture',theimage);
 //            form.append('type', 'link')
 //            form.append('name','hadley media event');
 //POST request options, notice 'path' has access_token parameter
-            var options = {
-                method: 'post',
-                host: 'graph.facebook.com',
-                path: '/me/photos?access_token=' + ACCESS_TOKEN,
-                headers: form.getHeaders(),
-            }
+    var options = {
+        method: 'post',
+        host: 'graph.facebook.com',
+        path: '/me/photos?access_token=' + ACCESS_TOKEN,
+        headers: form.getHeaders(),
+    }
 
-            console.log('starting POST request to facebook');
+    console.log('starting POST request to facebook');
 //Do POST request, callback for response
-            var request = https.request(options, function(res) {
-                console.log(res);
-                facebookLoadComplete();
-            });
-//Binds form to request
-            form.pipe(request);
-//If anything goes wrong (request-wise not FB)
-            request.on('error', function(error) {
-                console.log(error);
-            });
-        });
+    var request = https.request(options, function(res) {
+//            console.log(res);
+        facebookLoadComplete();
     });
+//Binds form to request
+    form.pipe(request);
+//If anything goes wrong (request-wise not FB)
+    request.on('error', function(error) {
+        console.log(error);
+    });
+    // });
 }
 
 function  facebookLoadComplete(){
     console.log('facebook upload complete');
 }
+
+
+
+function handleDisconnect() {
+    db = mysql.createConnection(config.app.db); // Recreate the connection, since
+    // the old one cannot be reused.
+
+    db.connect(function(err) {              // The server is either down
+        if(err) {                                     // or restarting (takes a while sometimes).
+            console.log('error when connecting to db:', err);
+            setTimeout(handleDisconnect, 2000); // We introduce a delay before attempting to reconnect,
+        }                                     // to avoid a hot loop, and to allow our node script to
+    });                                     // process asynchronous requests in the meantime.
+                                            // If you're also serving http, display a 503 error.
+    db.on('error', function(err) {
+        console.log('db error', err);
+        if(err.code === 'PROTOCOL_CONNECTION_LOST') { // Connection to the MySQL server is usually
+            handleDisconnect();                         // lost due to either server restart, or a
+        } else {                                      // connnection idle timeout (the wait_timeout
+            throw err;                                  // server variable configures this)
+        }
+    });
+}
+
